@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 4399-timeline
 
 This template should help get you started developing with Vue 3 in Vite.
@@ -36,3 +37,7 @@ npm run dev
 ```sh
 npm run build
 ```
+=======
+# 4399-in-depth-research-website
+A web page exploring the past and present of 4399
+>>>>>>> bae447390793467652d5a8083c40af05c86146c3

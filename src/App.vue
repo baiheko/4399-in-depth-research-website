@@ -248,6 +248,7 @@ onMounted(() => {
               <button class="close-btn" @click="showDetail = false">×</button>
             </div>
           </transition>
+
           <!-- <div v-else class="empty-state">
             <p>点击左侧卡片查看详细信息</p>
           </div> -->
@@ -439,25 +440,6 @@ body {
   padding: 15px;
   font-size: 1rem;
 }
-
-/* 内容切换动画 */
-.detail-change-enter-from,
-.detail-change-leave-to {
-  opacity: 0;
-  transform: translateY(20px);
-}
-
-.detail-change-enter-active,
-.detail-change-leave-active {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.detail-change-leave-from,
-.detail-change-enter-to {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 
 /* 关闭按钮 */
 .close-btn {

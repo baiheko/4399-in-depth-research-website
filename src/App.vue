@@ -207,6 +207,7 @@ body {
 
 /* 头部样式 */
 .hero {
+  width: 50vw;
   background: linear-gradient(135deg, #2d3436 0%, #000000 100%);
   color: white;
   padding: 80px 20px;
@@ -257,10 +258,10 @@ body {
 
 /* 时间轴容器 */
 .timeline-container {
+  width: 50vw;
   max-width: 1000px;
-  margin: 60px;
+  margin: 50px 0;
   position: relative;
-  padding: 50px;
 }
 
 .timeline-container::after {

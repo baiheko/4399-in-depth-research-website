@@ -283,7 +283,7 @@ body {
 }
 
 .left { left: 0; text-align: right; }
-.right { left: 50.6%; text-align: left; }
+.right { left: 50.5%; text-align: left; }
 
 /* 响应式适配 */
 @media (max-width: 768px) {

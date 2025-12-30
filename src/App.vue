@@ -258,9 +258,9 @@ body {
 /* 时间轴容器 */
 .timeline-container {
   max-width: 1000px;
-  margin: 60px auto;
+  margin: 60px;
   position: relative;
-  padding: 20px;
+  padding: 50px;
 }
 
 .timeline-container::after {

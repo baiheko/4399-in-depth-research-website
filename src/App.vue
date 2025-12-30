@@ -227,29 +227,30 @@ onMounted(() => {
     </div>
     <!-- 右侧详情区域 -->
         <aside class="detail-panel" :class="{ 'show': showDetail }">
-          <div v-if="selectedItem" class="detail-content">
-            <div class="detail-header">
-              <span class="year-tag">{{ selectedItem.year }}</span>
-              <h2>{{ selectedItem.title }}</h2>
-            </div>
-            
-            <div class="detail-img">
-              <img :src="selectedItem.img" :alt="selectedItem.title">
-            </div>
-            
-            <div class="detail-body">
-              <p>{{ selectedItem.detail }}</p>
-              <div v-if="selectedItem.dev" class="dev-box">
-                🔍 {{ selectedItem.dev }}
+          <transition name="detail-change">
+            <div v-if="selectedItem" class="detail-content" :key="selectedItem.year">
+              <div class="detail-header">
+                <span class="year-tag">{{ selectedItem.year }}</span>
+                <h2>{{ selectedItem.title }}</h2>
               </div>
+              
+              <div class="detail-img">
+                <img :src="selectedItem.img" :alt="selectedItem.title">
+              </div>
+              
+              <div class="detail-body">
+                <p>{{ selectedItem.detail }}</p>
+                <div v-if="selectedItem.dev" class="dev-box">
+                  🔍 {{ selectedItem.dev }}
+                </div>
+              </div>
+              
+              <button class="close-btn" @click="showDetail = false">×</button>
             </div>
-            
-            <button class="close-btn" @click="showDetail = false">×</button>
-          </div>
-          
-          <div v-else class="empty-state">
+          </transition>
+          <!-- <div v-else class="empty-state">
             <p>点击左侧卡片查看详细信息</p>
-          </div>
+          </div> -->
         </aside>
   </div>
 </template>
@@ -438,6 +439,25 @@ body {
   padding: 15px;
   font-size: 1rem;
 }
+
+/* 内容切换动画 */
+.detail-change-enter-from,
+.detail-change-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.detail-change-enter-active,
+.detail-change-leave-active {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.detail-change-leave-from,
+.detail-change-enter-to {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 
 /* 关闭按钮 */
 .close-btn {

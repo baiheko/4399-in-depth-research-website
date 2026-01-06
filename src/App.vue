@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 
@@ -7,16 +7,15 @@ import 'aos/dist/aos.css';
 const currentFilter = ref('all');
 const showLightbox = ref(false);
 const currentImage = ref('');
-// 添加选中项状态管理
+// 选中项状态管理
 const selectedItem = ref(null);
 const showDetail = ref(false);
-// 新增：引言弹窗控制
-const showIntroModal = ref(true); 
-
-
+// 引言弹窗控制
+const showIntroModal = ref(false); 
+// Canvas 引用
+const bgCanvas = ref(null);
 
 // --- 核心数据 ---
-// --- 仅 milestone（发展历程）核心数据 ---
 const timelineData = [
   {
     year: "引言",
@@ -247,22 +246,20 @@ const timelineData = [
   }
 ];
 
-// 新增：处理引言内容中的链接，隐藏URL，将标题做成超链接
+// --- 计算属性与逻辑处理 ---
+
+// 1. 处理引言弹窗数据
+// 处理引言内容中的链接：隐藏URL，标题做超链接
 const processIntroLinks = (content) => {
   if (!content) return '';
-  
-  // 正则匹配 [数字] 标题 https://xxx 格式（支持换行/空格分隔）
+  // 匹配 [数字] 标题 URL 格式
   const linkRegex = /\[(\d+)\]\s+([^\n]+?)\s+(https?:\/\/[^\s\n]+)/g;
-  
-  // 替换逻辑：保留标题文本，将标题转为超链接，隐藏URL
+  // 替换：标题转超链接，隐藏URL
   let processedContent = content.replace(linkRegex, (match, num, title, url) => {
-    // 把标题文本做成超链接，保留数字标记，隐藏URL
     return `<a href="${url}" target="_blank" class="intro-link">[${num}] ${title}</a>`;
   });
-  
-  // 清理可能残留的独立URL行（防止漏处理）
+  // 清理残留的独立URL
   processedContent = processedContent.replace(/https?:\/\/[^\s\n]+/g, '');
-  
   return processedContent;
 };
 
@@ -275,53 +272,144 @@ const introData = computed(() => {
   };
 });
 
-// 关闭弹窗时存储状态
+// 关闭引言弹窗
 const closeIntroModal = () => {
   showIntroModal.value = false;
-  localStorage.setItem('introModalClosed', 'true');
 };
 
-// 挂载时读取状态
-onMounted(() => {
-  AOS.init();
-  nextTick(() => {
-    const hasClosed = localStorage.getItem('introModalClosed');
-    showIntroModal.value = !hasClosed; // 仅首次打开时弹出
-  });
-});
 
-// 页面挂载初始化
-onMounted(() => {
-  AOS.init();
-  nextTick(() => {
-    // 确保DOM渲染完成后弹窗弹出
-    showIntroModal.value = true;
-  });
-});
-
-// 点击卡片处理函数
-const handleCardClick = (item) => {
-  selectedItem.value = item;
-  // 用于触发动画的状态切换
-  showDetail.value = false;
-  // 等待DOM更新后显示详情，触发过渡动画
-  nextTick(() => {
-    showDetail.value = true;
-  });
-};
-
-// --- 计算属性：筛选逻辑 ---
+// 2. 列表筛选逻辑 (排除 "引言" 项)
 const filteredData = computed(() => {
+  // 先排除引言，它只用于弹窗，不应出现在列表中
+  const list = timelineData.filter(item => item.year !== "引言");
+  
   if (currentFilter.value === 'all') {
-    return timelineData;
+    return list;
   }
-  return timelineData.filter(item => item.type === currentFilter.value);
+  return list.filter(item => item.type === currentFilter.value);
 });
+
+// --- Canvas 背景特效逻辑 ---
+let animationFrameId;
+
+const initCanvas = () => {
+  const canvas = bgCanvas.value;
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  let width, height;
+  let particles = [];
+
+  // 配置
+  const particleCount = 60; // 粒子数量
+  const connectionDistance = 150; // 连线距离
+  const mouseDistance = 200; // 鼠标互动距离
+
+  // 调整画布大小
+  const resize = () => {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+  };
+  window.addEventListener('resize', resize);
+  resize();
+
+  // 鼠标位置追踪
+  let mouse = { x: null, y: null };
+  window.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  });
+  window.addEventListener('mouseout', () => {
+    mouse.x = null;
+    mouse.y = null;
+  });
+
+  // 粒子类
+  class Particle {
+    constructor() {
+      this.x = Math.random() * width;
+      this.y = Math.random() * height;
+      this.vx = (Math.random() - 0.5) * 1.5; // 速度略微调快
+      this.vy = (Math.random() - 0.5) * 1.5;
+      this.size = Math.random() * 2 + 1;
+    }
+
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // 边界反弹
+      if (this.x < 0 || this.x > width) this.vx *= -1;
+      if (this.y < 0 || this.y > height) this.vy *= -1;
+
+      // 鼠标互动（排斥效果）
+      if (mouse.x != null) {
+        let dx = mouse.x - this.x;
+        let dy = mouse.y - this.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < mouseDistance) {
+          const forceDirectionX = dx / distance;
+          const forceDirectionY = dy / distance;
+          const force = (mouseDistance - distance) / mouseDistance;
+          const directionX = forceDirectionX * force * 3;
+          const directionY = forceDirectionY * force * 3;
+          this.x -= directionX;
+          this.y -= directionY;
+        }
+      }
+    }
+
+    draw() {
+      // 粒子颜色：半透明白色
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; 
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 初始化粒子
+  for (let i = 0; i < particleCount; i++) {
+    particles.push(new Particle());
+  }
+
+  // 动画循环
+  const animate = () => {
+    ctx.clearRect(0, 0, width, height);
+    
+    // 更新和绘制
+    for (let i = 0; i < particles.length; i++) {
+      particles[i].update();
+      particles[i].draw();
+
+      // 连线逻辑
+      for (let j = i; j < particles.length; j++) {
+        let dx = particles[i].x - particles[j].x;
+        let dy = particles[i].y - particles[j].y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < connectionDistance) {
+          ctx.beginPath();
+          // 线条透明度随距离变化
+          let opacity = 1 - (distance / connectionDistance);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.2})`; 
+          ctx.lineWidth = 1;
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+    animationFrameId = requestAnimationFrame(animate);
+  };
+
+  animate();
+};
 
 // --- 方法 ---
+
 const setFilter = (type) => {
   currentFilter.value = type;
-  // 切换筛选后刷新动画
   nextTick(() => {
     AOS.refresh();
   });
@@ -336,48 +424,85 @@ const closeLightbox = () => {
   showLightbox.value = false;
 };
 
+const handleCardClick = (item) => {
+  selectedItem.value = item;
+  showDetail.value = false;
+  nextTick(() => {
+    showDetail.value = true;
+  });
+};
+
+
 // --- 生命周期 ---
+
 onMounted(() => {
+  // 1. 初始化 AOS
   AOS.init({
     duration: 800,
-    once: false, // 允许滚动回看时重复触发动画
+    once: false,
   });
+
+  // 2. 初始化背景特效
+  initCanvas();
+
+  // 3. 弹窗逻辑
+ 
+  showIntroModal.value = true;
+  
 });
 
-
-
+onUnmounted(() => {
+  // 清理动画和监听器，防止内存泄漏
+  cancelAnimationFrame(animationFrameId);
+  window.removeEventListener('resize', () => {});
+  window.removeEventListener('mousemove', () => {});
+  window.removeEventListener('mouseout', () => {});
+});
+/*
+// --- 侦听器 ---
+watch([showDetail, showIntroModal, showLightbox], ([detail, intro, lightbox]) => {
+  if (detail || intro || lightbox) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
+});
+*/
 </script>
 
 <template>
-  <div class="main-content">
-    <div class="app-container">
-      <header class="hero">
-        <div class="hero-content" data-aos="fade-down">
-          <h1>4399 编年史</h1>
-          <p class="subtitle">盗版发家 · 童年印记 · 兴衰参半</p>
-          
-          <div class="filter-box">
-            <button 
-              v-for="btn in [
-                { label: '发展历程', value: 'milestone' },
-                { label: '技术革命', value: 'flash' },
-                { label: '经典游戏', value: 'game' },
-                { label: '遗忘英雄', value: 'true' }
-              ]"
-              :key="btn.value"
-              class="filter-btn"
-              :class="{ active: currentFilter === btn.value }"
-              @click="setFilter(btn.value)"
-            >
-              {{ btn.label }}
-            </button>
-          </div>
-        </div>
-        <div class="bg-grid"></div>
-      </header>
+  <div class="app-bg">
+    
+    <canvas ref="bgCanvas" class="background-canvas"></canvas>
 
-      
-        <!-- 时间轴容器 -->
+    <div class="main-content">
+
+      <div class="app-container">
+        <header class="hero">
+          <div class="hero-content" data-aos="fade-down">
+            <h1>4399 编年史</h1>
+            <p class="subtitle">盗版发家 · 童年印记 · 兴衰参半</p>
+
+            <div class="filter-box">
+              <button 
+                v-for="btn in [
+                  { label: '全部', value: 'all' },
+                  { label: '发展历程', value: 'milestone' },
+                  { label: '技术革命', value: 'flash' },
+                  { label: '经典游戏', value: 'game' },
+                  { label: '遗忘英雄', value: 'true' }
+                ]"
+                :key="btn.value"
+                class="filter-btn"
+                :class="{ active: currentFilter === btn.value }"
+                @click="setFilter(btn.value)"
+              >
+                {{ btn.label }}
+              </button>
+            </div>
+          </div>
+        </header>
+
         <main class="timeline-container">
           <div 
             v-for="(item, index) in filteredData" 
@@ -387,15 +512,19 @@ onMounted(() => {
             data-aos="fade-up"
           >
             <div class="dot"></div>
-            <div class="card" :class="`type-${item.type}`"@click="handleCardClick(item)">
+            <div 
+              class="card" 
+              :class="`type-${item.type}`"
+              @click="handleCardClick(item)"
+            >
               <div 
                 v-if="item.img" 
                 class="card-img-container" 
-                @click="openLightbox(item.img)"
+                @click.stop="openLightbox(item.img)"
               >
                 <img :src="item.img" class="card-img" :alt="item.title">
               </div>
-              
+
               <div class="card-body">
                 <span class="year-tag">{{ item.year }}</span>
                 <h3>{{ item.title }}</h3>
@@ -407,73 +536,92 @@ onMounted(() => {
             </div>
           </div>
         </main>
-              
-      
 
-      <div v-if="showLightbox" class="lightbox" @click="closeLightbox">
-        <img :src="currentImage" alt="大图预览" @click.stop>
+        <footer>
+          <p>
+            致敬真正的游戏创作者 |
+            <span style="color:#ff6a00">4399</span>
+            深度调研报告
+          </p>
+        </footer>
       </div>
 
-      <footer>
-        <p>致敬真正的游戏创作者 | <span style="color:#ff6a00">4399</span> 深度调研报告</p>
-      </footer>
-    </div>
-    <!-- 右侧详情区域 -->
-        <aside class="detail-panel" :class="{ 'show': showDetail }">
-          <transition name="detail-change">
-            <div v-if="selectedItem" class="detail-content" :key="selectedItem.year">
-              <div class="detail-header">
-                <span class="year-tag">{{ selectedItem.year }}</span>
-                <h2>{{ selectedItem.title }}</h2>
-              </div>
-              
-              <div class="detail-img">
-                <img :src="selectedItem.img" :alt="selectedItem.title">
-              </div>
-              
-              <div class="detail-body">
-                <p>{{ selectedItem.detail }}</p>
-                <div v-if="selectedItem.dev" class="dev-box">
-                  🔍 {{ selectedItem.dev }}
-                </div>
-              </div>
-              
-              <button class="close-btn" @click="showDetail = false">×</button>
+      <aside class="detail-panel" :class="{ show: showDetail }">
+        <transition name="detail-change">
+          <div
+            v-if="selectedItem"
+            class="detail-content"
+            :key="selectedItem.title"
+          >
+            <button class="mobile-close-btn" @click="showDetail = false">
+              <span class="icon">▼</span>
+            </button>
+
+            <div class="detail-header">
+              <span class="year-tag">{{ selectedItem.year }}</span>
+              <h2>{{ selectedItem.title }}</h2>
             </div>
-          </transition>
 
-          <!-- <div v-else class="empty-state">
-            <p>点击左侧卡片查看详细信息</p>
-          </div> -->
-        </aside>
-  </div>
+            <div class="detail-img">
+              <img :src="selectedItem.img" :alt="selectedItem.title">
+            </div>
 
-  <!-- 新增：引言弹窗 -->
-  <teleport to="body">
-    <div v-if="showIntroModal" class="intro-modal-mask">
-      <div class="intro-modal-content">
-        <!-- 弹窗头部 -->
-        <div class="intro-modal-header">
-          <h3>{{ introData.title }}</h3>
-          <button class="intro-modal-close" @click="closeIntroModal">×</button>
-        </div>
-        <!-- 弹窗内容（处理后的引言文本，含超链接） -->
-        <div 
-          class="intro-modal-body"
-          v-html="introData.detail"
-        ></div>
-        <!-- 弹窗底部 -->
-        <div class="intro-modal-footer">
-          <button class="intro-modal-close-btn" @click="closeIntroModal">
-            关闭
-          </button>
+            <div class="detail-body">
+              <p>{{ selectedItem.detail }}</p>
+              <div v-if="selectedItem.dev" class="dev-box">
+                🔍 {{ selectedItem.dev }}
+              </div>
+            </div>
+
+            <button class="close-btn" @click="showDetail = false">×</button>
+          </div>
+        </transition>
+      </aside>
+
+    </div>
+
+    <div v-if="showLightbox" class="lightbox" @click="closeLightbox">
+      <img :src="currentImage" alt="大图预览" @click.stop>
+    </div>
+
+    <teleport to="body">
+      <div v-if="showIntroModal" class="intro-modal-mask">
+        <div class="intro-modal-content">
+          <div class="intro-modal-header">
+            <h3>{{ introData.title }}</h3>
+            <button class="intro-modal-close" @click="closeIntroModal">×</button>
+          </div>
+
+          <div
+            class="intro-modal-body"
+            v-html="introData.detail"
+          ></div>
+
+          <div class="intro-modal-footer">
+            <button
+              class="intro-modal-close-btn"
+              @click="closeIntroModal"
+            >
+              关闭
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  </teleport>
+    </teleport>
+
+  </div>
 </template>
 
 <style>
+/* 全局重置 */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Noto Sans SC', sans-serif;
+  background-color: #2b3a42; /* 为了防止 canvas 加载前闪白 */
+  color: #333;
+}
+
 /* 引言弹窗样式 */
 .intro-modal-mask {
   position: fixed;
@@ -487,6 +635,7 @@ onMounted(() => {
   justify-content: center;
   z-index: 9999;
   padding: 20px;
+  backdrop-filter: blur(5px);
 }
 
 .intro-modal-content {
@@ -497,6 +646,8 @@ onMounted(() => {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
 }
 
 .intro-modal-header {
@@ -534,14 +685,12 @@ onMounted(() => {
 
 .intro-modal-body {
   padding: 20px;
-  max-height: 60vh;
   overflow-y: auto;
   line-height: 1.6;
   color: #333;
-  white-space: pre-line; /* 保留换行符 */
+  white-space: pre-line;
 }
 
-/* 超链接样式 */
 .intro-modal-body .intro-link {
   color: #1677ff;
   text-decoration: none;
@@ -557,6 +706,7 @@ onMounted(() => {
   border-top: 1px solid #eee;
   display: flex;
   justify-content: flex-end;
+  background: #fff;
 }
 
 .intro-modal-close-btn {
@@ -572,27 +722,9 @@ onMounted(() => {
 .intro-modal-close-btn:hover {
   background: #0958d9;
 }
-
-
-/* 全局重置 */
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Noto Sans SC', sans-serif;
-  background-color: #eef2f5;
-  background-image: radial-gradient(#dce1e6 1px, transparent 1px);
-  background-size: 20px 20px;
-  color: #333;
-}
 </style>
 
 <style scoped>
-/* 主内容区布局 */
-.main-content {
-  display: flex;
-  width: 97vw;
-  margin: 0 auto;
-}
 /* 变量定义 */
 .app-container {
   --primary: #ff6a00;
@@ -603,16 +735,59 @@ body {
   width: 50%;
 }
 
+/* 核心背景样式 + Canvas */
+.app-bg {
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  background: linear-gradient(
+    -45deg,
+    #141e30,
+    #243b55,
+    #283048
+  );
+  background-size: 400% 400%;
+  animation: gradientBG 16s ease infinite;
+}
+
+/* Canvas 样式 */
+.background-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0; /* 放在底层 */
+  pointer-events: none; /* 鼠标穿透 */
+}
+
+@keyframes gradientBG {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 主内容区布局 */
+.main-content {
+  position: relative;
+  z-index: 1; /* 确保内容在 Canvas 上方 */
+  display: flex;
+  width: 97vw;
+  margin: 0 auto;
+}
+
 /* 头部样式 */
 .hero {
   width: 100%;
-  background: linear-gradient(135deg, #2d3436 0%, #000000 100%);
+  background: linear-gradient(135deg, rgba(45, 52, 54, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
   color: white;
   padding: 80px 20px;
   text-align: center;
   position: relative;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  border-radius: 0 0 20px 20px;
+  backdrop-filter: blur(10px);
 }
 
 .hero h1 {
@@ -665,7 +840,7 @@ body {
   content: '';
   position: absolute;
   width: 6px;
-  background: #e0e0e0;
+  background: rgba(224, 224, 224, 0.5); /* 稍微透明适应深色背景 */
   top: 0; bottom: 0; left: 50%;
   margin-left: -3px;
   border-radius: 3px;
@@ -687,43 +862,53 @@ body {
   width: 48%;
   padding: 50px;
   background-color: var(--card-bg);
-  border-left: 1px solid #eee;
-  box-shadow: -5px 0 25px rgba(0,0,0,0.05);
+  border-left: 1px solid rgba(255, 215, 0, 0.3);
+  box-shadow: -5px 0 25px rgba(0,0,0,0.2);
   overflow-y: auto;
-  min-height: calc(100vh - 220px); /* 减去头部和底部高度 */
   position: fixed;
   right: 0;
   top: 0;
-  height: 100vh; /* 占满整个视口高度 */
+  height: 100vh;
   opacity: 0;
   transform: translateX(20px);
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  pointer-events: none; /* 隐藏时不响应事件 */
-  margin: 0 1vw;
+  pointer-events: none;
+  box-sizing: border-box;
+  z-index: 1001; /* 确保层级极高，能够接收鼠标滚轮事件 */
+  overflow-y: auto; /* 确保超长内容出现滚动条 */
+  overscroll-behavior: contain; /* 防止滚动链效应 */
 }
 
-/* 显示详情面板的动画状态 */
 .detail-panel.show {
   opacity: 1;
   transform: translateX(0);
   pointer-events: auto;
 }
 
-/* 详情内容样式 */
 .detail-content {
   max-width: 800px;
   margin: 0 auto;
+  position: relative;
 }
 
 .detail-header .year-tag {
-  font-size: 1rem;
+  background: #333;
+  color: #fff;
   padding: 6px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 1rem;
+  display: inline-block;
 }
 
+/* --- 详情页标题：亮金色 --- */
 .detail-header h2 {
   font-size: 2rem;
   margin: 15px 0 30px;
-  color: #2c3e50;
+  /* 修改颜色为亮金 */
+  color: #ffd700; 
+  /* 加上一点文字阴影，保证在任何背景下都清晰可见 */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
 .detail-img {
@@ -745,21 +930,31 @@ body {
   transform: scale(1.02);
 }
 
+/* --- 详情页正文：浅金色/米白 --- */
 .detail-body p {
   font-size: 1.1rem;
   line-height: 1.8;
-  color: #444;
   margin-bottom: 25px;
   white-space: pre-line;
+  /* 修改颜色为浅金色 (阅读长文比纯黄更舒服) */
+  color: #fff8e1; 
+  /* 稍微加点阴影增加对比度 */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  /* 稍微加粗一点点，防止字体太细看不清 */
+  font-weight: 500;
 }
 
 .detail-body .dev-box {
+  background: #fff8e1;
+  border-left: 4px solid #ffc107;
   margin-top: 30px;
   padding: 15px;
   font-size: 1rem;
+  color: #8d6e63;
+  border-radius: 0 8px 8px 0;
 }
 
-/* 关闭按钮 */
+/* 关闭按钮 (桌面端) */
 .close-btn {
   position: fixed;
   top: 20px;
@@ -784,68 +979,34 @@ body {
   transform: rotate(90deg);
 }
 
-/* 空状态样式 */
-.empty-state {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-  font-size: 1.2rem;
-  text-align: center;
-  padding: 20px;
-}
-
-
-
-/* 响应式适配 */
-@media (max-width: 1024px) {
-  .main-content {
-    flex-direction: column;
-  }
-  
-  .timeline-container, .detail-panel {
-    width: 100%;
-  }
-  
-  .detail-panel {
-    min-height: auto;
-    border-left: none;
-    border-top: 1px solid #eee;
-  }
-  
-  .detail-header h2 {
-    font-size: 1.5rem;
-  }
-  .timeline-container::after { left: 30px; }
-  .card-wrapper { width: 100%; padding-left: 70px; padding-right: 20px; text-align: left; }
-  .card-wrapper.left, .card-wrapper.right { left: 0; }
-  .left .dot, .right .dot { left: 13px; right: auto; }
+/* 移动端关闭按钮 */
+.mobile-close-btn {
+  display: none;
 }
 
 /* 卡片样式 */
 .card {
   background: var(--card-bg);
   border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
   overflow: hidden;
   transition: all 0.3s ease;
   border-top: 5px solid #ccc;
-  text-align: left; /* 强制内容左对齐 */
+  text-align: left;
+  cursor: pointer;
 }
 
 .card:hover {
   transform: translateY(-8px);
-  box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+  box-shadow: 0 15px 40px rgba(0,0,0,0.3);
 }
 
 /* 类型颜色条 */
 .card.type-game { border-top-color: var(--primary); }
-.card.type-controversy { border-top-color: var(--red); }
-.card.type-business { border-top-color: var(--blue); }
+.card.type-true { border-top-color: var(--red); }
+.card.type-flash { border-top-color: var(--blue); }
 .card.type-milestone { border-top-color: var(--yellow); }
 
-/* 图片 */
 .card-img-container {
   width: 100%;
   height: 180px;
@@ -864,7 +1025,6 @@ body {
 
 .card:hover .card-img { transform: scale(1.1); }
 
-/* 内容区 */
 .card-body { padding: 25px; }
 
 .year-tag {
@@ -891,7 +1051,6 @@ body {
   margin-bottom: 15px;
 }
 
-/* 开发者框 */
 .dev-box {
   background: #fff8e1;
   border-left: 4px solid #ffc107;
@@ -926,7 +1085,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 2001;
   backdrop-filter: blur(5px);
 }
 
@@ -946,7 +1105,94 @@ body {
 footer {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: #ccc; /* 调整为浅色以适应深背景 */
   font-size: 0.9rem;
+}
+
+/* 响应式适配 */
+@media (max-width: 1024px) {
+  .main-content {
+    flex-direction: column;
+  }
+  
+  .app-container {
+    width: 100%;
+  }
+
+  /* 移动端详情页改为全屏覆盖 */
+  .detail-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    z-index: 2000;
+    margin: 0;
+    border: none;
+    background: #fff;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+  }
+
+  .detail-panel.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .detail-content {
+    padding-bottom: 80px;
+    padding-top: 60px;
+  }
+
+  .close-btn { display: none; }
+  
+  .mobile-close-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    height: 40px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+  }
+  
+  .mobile-close-btn .icon {
+    animation: bounce 2s infinite;
+  }
+  
+  @keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+    40% {transform: translateY(5px);}
+    60% {transform: translateY(3px);}
+  }
+
+  /* 时间轴调整 */
+  .timeline-container::after { left: 30px; }
+  .card-wrapper { width: 100%; padding-left: 70px; padding-right: 20px; text-align: left; }
+  .card-wrapper.left, .card-wrapper.right { left: 0; }
+  .left .dot, .right .dot { left: 13px; right: auto; }
+}
+
+/* 美化滚动条 */
+.detail-panel::-webkit-scrollbar,
+.intro-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.detail-panel::-webkit-scrollbar-thumb,
+.intro-modal-body::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+.detail-panel::-webkit-scrollbar-track,
+.intro-modal-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 </style>

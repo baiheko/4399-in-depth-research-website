@@ -14,6 +14,7 @@ const showDetail = ref(false);
 const showIntroModal = ref(true); 
 
 
+
 // --- 核心数据 ---
 // --- 仅 milestone（发展历程）核心数据 ---
 const timelineData = [
@@ -274,10 +275,20 @@ const introData = computed(() => {
   };
 });
 
-// 关闭引言弹窗
+// 关闭弹窗时存储状态
 const closeIntroModal = () => {
   showIntroModal.value = false;
+  localStorage.setItem('introModalClosed', 'true');
 };
+
+// 挂载时读取状态
+onMounted(() => {
+  AOS.init();
+  nextTick(() => {
+    const hasClosed = localStorage.getItem('introModalClosed');
+    showIntroModal.value = !hasClosed; // 仅首次打开时弹出
+  });
+});
 
 // 页面挂载初始化
 onMounted(() => {
